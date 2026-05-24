@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="DejaVu Sans Mono, Menlo, monospace">
+  <!-- Gruvbox dark background -->
+  <rect x="0" y="0" width="1280" height="640" fill="#282828"/>
+  <rect x="0" y="0" width="1280" height="10" fill="#D79921"/>
+
+  <!-- title -->
+  <text x="90" y="250" fill="#EBDBB2" font-size="96" font-weight="bold">tmux-weather</text>
+  <!-- tagline -->
+  <text x="96" y="320" fill="#A89984" font-size="34">Weather in your tmux status bar</text>
+  <text x="96" y="366" fill="#A89984" font-size="34">cached &#183; auto-located &#183; zero-config</text>
+
+  <!-- mini status bar strip -->
+  <g transform="translate(90,440)">
+    <rect x="0" y="0" width="1100" height="56" fill="#3C3836"/>
+    <rect x="0" y="0" width="150" height="56" fill="#D79921"/>
+    <text x="20" y="37" fill="#282828" font-size="26" font-weight="bold">main</text>
+    <polygon points="150,0 178,28 150,56" fill="#D79921"/>
+    <!-- weather + clock anchored right -->
+    <rect x="640" y="0" width="340" height="56" fill="#689D6A"/>
+    <polygon points="640,0 612,28 640,56" fill="#689D6A"/>
+    <text x="656" y="37" fill="#282828" font-size="26" font-weight="bold">&#9728; 12&#176;C Buenos Aires</text>
+    <rect x="980" y="0" width="120" height="56" fill="#D79921"/>
+    <polygon points="980,0 952,28 980,56" fill="#D79921"/>
+    <text x="996" y="37" fill="#282828" font-size="26" font-weight="bold">18:42</text>
+  </g>
+
+  <!-- footer -->
+  <text x="90" y="585" fill="#689D6A" font-size="26">github.com/estereotipau/tmux-weather</text>
+  <text x="1190" y="585" fill="#504945" font-size="26" text-anchor="end">MIT</text>
+</svg>
