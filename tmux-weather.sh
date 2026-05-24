@@ -2,70 +2,113 @@
 # tmux-weather — cached, auto-located weather for your tmux status bar.
 #
 # Data sources (no API keys required):
-#   - wttr.in           weather conditions + temperature + IP geolocation
-#   - Nominatim (OSM)    reverse-geocode fallback when wttr.in returns raw coords
+#   - ip-api.com   IP geolocation: city name + coordinates
+#   - wttr.in      weather conditions + temperature (queried by coordinates)
+#
+# Location resolution order:
+#   1. $TMUX_WEATHER_LOCATION  if set (e.g. "San Nicolas de los Arroyos")
+#   2. ip-api.com geolocation of your egress IP
+#   3. wttr.in's own IP geolocation (last-resort fallback)
+#
+# The network refresh runs in the background behind an atomic lock, so the
+# status bar never blocks — even on slow links — and never spawns duplicates.
 #
 # Usage in ~/.tmux.conf:
 #   set -g status-right "#(~/.local/bin/tmux-weather.sh)"
 #
-# Tunables via environment:
-#   TMUX_WEATHER_CACHE     cache file       (default /tmp/.tmux-weather-data)
-#   TMUX_WEATHER_LAST      timestamp file   (default /tmp/.tmux-weather-last)
-#   TMUX_WEATHER_INTERVAL  refresh seconds  (default 600)
-#   TMUX_WEATHER_LANG      place-name lang  (default es)
+# Tunables (all optional, via environment):
+#   TMUX_WEATHER_LOCATION   force a place, skip IP geolocation   (unset)
+#   TMUX_WEATHER_INTERVAL   seconds between network refreshes     (600)
+#   TMUX_WEATHER_TIMEOUT    per-request curl timeout, seconds     (10)
+#   TMUX_WEATHER_CACHE      cache file                            (/tmp/.tmux-weather-data)
+#   TMUX_WEATHER_LAST       refresh-timestamp file                (/tmp/.tmux-weather-last)
+#   TMUX_WEATHER_LOCK       lock directory                        (/tmp/.tmux-weather.lock)
+#   TMUX_WEATHER_SYNC       if set, refresh in foreground (debug) (unset)
 
 set -u
 
 CACHE="${TMUX_WEATHER_CACHE:-/tmp/.tmux-weather-data}"
 LAST="${TMUX_WEATHER_LAST:-/tmp/.tmux-weather-last}"
+LOCK="${TMUX_WEATHER_LOCK:-/tmp/.tmux-weather.lock}"
 INTERVAL="${TMUX_WEATHER_INTERVAL:-600}"
-LANG_TAG="${TMUX_WEATHER_LANG:-es}"
-UA="tmux-weather/1.0 (+https://github.com/estereotipau/tmux-weather)"
+TIMEOUT="${TMUX_WEATHER_TIMEOUT:-10}"
+OVERRIDE="${TMUX_WEATHER_LOCATION:-}"
+
+icon_for() {
+    case "$1" in
+        *Clear*|*Sunny*)    echo "☀" ;;
+        *Partly*|*Cloudy*)  echo "☁" ;;
+        *Rain*|*Drizzle*)   echo "☂" ;;
+        *Snow*|*Sleet*)     echo "❄" ;;
+        *Thunder*)          echo "⛈" ;;
+        *Fog*|*Mist*)       echo "🌫" ;;
+        *Overcast*)         echo "☁" ;;
+        *)                  echo "☁" ;;
+    esac
+}
+
+refresh() {
+    local query="" name=""
+
+    if [ -n "$OVERRIDE" ]; then
+        query="$OVERRIDE"
+        name="$OVERRIDE"
+    else
+        # ip-api.com geolocates the egress IP and returns a city name + coords
+        # ("City|lat,lon"). More accurate than wttr.in's own IP geolocation.
+        local geo
+        geo=$(curl -sL --max-time "$TIMEOUT" \
+              "http://ip-api.com/json/?fields=status,city,lat,lon" 2>/dev/null \
+              | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if d.get("status") == "success" and d.get("city"):
+    print("%s|%s,%s" % (d["city"], d["lat"], d["lon"]))
+' 2>/dev/null)
+        if [ -n "$geo" ]; then
+            name="${geo%%|*}"
+            query="${geo##*|}"
+        fi
+        # If geo failed, name/query stay empty → wttr.in auto-detect fallback.
+    fi
+
+    # wttr.in accepts "lat,lon" or a place name; spaces must be '+'.
+    local wq="${query// /+}"
+    local weather
+    weather=$(curl -sL --max-time "$TIMEOUT" "wttr.in/${wq}?format=%C+%t&m" 2>/dev/null)
+    if [ -z "$weather" ] || [[ "$weather" == *Unknown* ]]; then
+        return 0
+    fi
+
+    # No name yet (geo failed) → let wttr.in name the auto-detected location.
+    if [ -z "$name" ]; then
+        name=$(curl -sL --max-time "$TIMEOUT" "wttr.in/${wq}?format=%l" 2>/dev/null)
+    fi
+
+    local temp
+    temp=$(printf '%s' "$weather" | rev | cut -d' ' -f1 | rev | sed 's/^+//')
+
+    # Atomic write so a concurrent reader never sees a half-written cache.
+    printf '%s  %s %s\n' "$(icon_for "$weather")" "$temp" "$name" > "$CACHE.$$"
+    mv -f "$CACHE.$$" "$CACHE"
+    date +%s > "$LAST"
+}
 
 now=$(date +%s)
 last=$(cat "$LAST" 2>/dev/null || echo 0)
-diff=$((now - last))
 
-if [ ! -f "$CACHE" ] || [ "$diff" -ge "$INTERVAL" ]; then
-    weather=$(curl -sL --max-time 5 "wttr.in/?format=%C+%t&m" 2>/dev/null)
-    location=$(curl -sL --max-time 5 "wttr.in/?format=%l" 2>/dev/null)
-
-    if [ -n "$weather" ] && [[ "$weather" != *Unknown* ]]; then
-        # wttr.in sometimes returns raw coordinates (e.g. "-34.60,-58.44")
-        # instead of a place name. When that happens, reverse-geocode them.
-        if [[ "$location" =~ ^-?[0-9]+\.?[0-9]*,-?[0-9]+\.?[0-9]*$ ]]; then
-            lat="${location%%,*}"
-            lon="${location##*,}"
-            geo=$(curl -sL --max-time 5 -A "$UA" \
-                "https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=${LANG_TAG}" 2>/dev/null)
-            name=$(printf '%s' "$geo" | python3 -c '
-import json, sys
-try:
-    addr = json.load(sys.stdin).get("address", {})
-except Exception:
-    sys.exit(0)
-for key in ("city","town","village","municipality","county","state_district","state"):
-    if addr.get(key):
-        print(addr[key]); break
-' 2>/dev/null)
-            [ -n "$name" ] && location="$name"
-        fi
-
-        icon=""
-        case "$weather" in
-            *Clear*|*Sunny*)    icon="☀" ;;
-            *Partly*|*Cloudy*)  icon="☁" ;;
-            *Rain*|*Drizzle*)   icon="☂" ;;
-            *Snow*|*Sleet*)     icon="❄" ;;
-            *Thunder*)          icon="⛈" ;;
-            *Fog*|*Mist*)       icon="🌫" ;;
-            *Overcast*)         icon="☁" ;;
-            *)                  icon="☁" ;;
-        esac
-        # Temperature is the last whitespace-delimited token; drop a leading '+'.
-        temp=$(echo "$weather" | rev | cut -d' ' -f1 | rev | sed 's/^+//')
-        echo "$icon  $temp $location" > "$CACHE"
-        echo "$now" > "$LAST"
+if [ ! -f "$CACHE" ] || [ "$((now - last))" -ge "$INTERVAL" ]; then
+    # Reap a stale lock left by a killed refresh (>2 min old) so we never wedge.
+    if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+        rmdir "$LOCK" 2>/dev/null
+    fi
+    if [ -n "${TMUX_WEATHER_SYNC:-}" ]; then
+        refresh
+    elif mkdir "$LOCK" 2>/dev/null; then
+        ( refresh; rmdir "$LOCK" 2>/dev/null ) >/dev/null 2>&1 &
     fi
 fi
 
