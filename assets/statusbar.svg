@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="44" viewBox="0 0 1000 44" font-family="DejaVu Sans Mono, Menlo, monospace" font-size="20">
+  <!-- status bar background (Gruvbox bg1) -->
+  <rect x="0" y="0" width="1000" height="44" fill="#3C3836"/>
+
+  <!-- left: session name (yellow) -->
+  <rect x="0" y="0" width="96" height="44" fill="#D79921"/>
+  <text x="12" y="29" fill="#282828" font-weight="bold">gdeuda</text>
+
+  <!-- current window (aqua), yellow arrow transitions into it -->
+  <rect x="96" y="0" width="116" height="44" fill="#689D6A"/>
+  <polygon points="96,0 116,22 96,44" fill="#D79921"/>
+  <text x="126" y="29" fill="#282828" font-weight="bold">1:bash</text>
+  <polygon points="212,0 232,22 212,44" fill="#689D6A"/>
+
+  <!-- inactive window (muted fg on bar bg) -->
+  <text x="244" y="29" fill="#A89984">2:vim</text>
+
+  <!-- right: weather segment (aqua) -->
+  <rect x="512" y="0" width="273" height="44" fill="#689D6A"/>
+  <polygon points="512,0 492,22 512,44" fill="#689D6A"/>
+  <text x="524" y="29" fill="#282828" font-weight="bold">&#9728; 12&#176;C Buenos Aires</text>
+
+  <!-- clock segment (yellow) -->
+  <rect x="785" y="0" width="215" height="44" fill="#D79921"/>
+  <polygon points="785,0 765,22 785,44" fill="#D79921"/>
+  <text x="800" y="29" fill="#282828" font-weight="bold">18:42 24/05/2026</text>
+</svg>

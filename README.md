@@ -7,9 +7,7 @@ city in the tmux status bar. It auto-detects your location from your IP, so
 it just works on a laptop, a remote server over SSH, or anywhere else —
 no API keys, no coordinates to hardcode.
 
-```
-☀  12°C Buenos Aires
-```
+![tmux-weather in a Gruvbox tmux status bar](assets/statusbar.png)
 
 ## Features
 
